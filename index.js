@@ -23,14 +23,14 @@ function sleep(ms) {
 // script starts here, gets companies from db in batches specified when calling e.g. getBatches(300)
 async function getBatches(batchSize) {
   // countQuery returns the total number of companies returned by the query
-  const sic = '63990 - Other information service activities n.e.c.'
+  const sic = '47910 - Retail sale via mail order houses or via Internet'
 
   // '47910 - Retail sale via mail order houses or via Internet'
   // '63120 - Web portals'
   // '63990 - Other information service activities n.e.c.', sic_code_2: '63990 - Other information service activities n.e.c.'
 
   const countQuery = {
-    text: "SELECT COUNT(*) FROM ecommerce",
+    text: "SELECT COUNT(*) FROM ecomm WHERE accounts_link_1 IS NULL",
     values: [],
   }
 
@@ -42,7 +42,7 @@ async function getBatches(batchSize) {
     console.log(`Getting companies ${offset} to ${offset + batchSize} of ${totalRows}...`);
 
     const query = {
-      text: "SELECT * FROM ecommerce LIMIT $1 OFFSET $2",
+      text: "SELECT * FROM ecomm WHERE accounts_link_1 IS NULL LIMIT $1 OFFSET $2",
       values: [batchSize, offset],
     }
     const selectResult = await db.query(query);
@@ -56,6 +56,19 @@ async function getBatches(batchSize) {
     for await (var company of companies) {
       await sleep(1000);
       await getAccounts(company);
+      // update accounts_retrieved to true
+      try {
+        const query = {
+          text: `UPDATE ecomm SET accounts_retrieved = $1 WHERE id = $2`,
+          values: [true, company.id],
+        }
+
+        console.log("Query: " + JSON.stringify(query));
+        const res = await db.query(query);
+        console.log("📗: updated accounts_retrieved: " + JSON.stringify(company.name));
+      } catch (err) {
+        console.error('Error inserting data: ', err);
+      }
       // console.log(`${company.name}...\n`)
     }
   }
@@ -95,13 +108,6 @@ async function getAccounts(company) {
   if (item?.account_filing?.items !== undefined) {
 
     for await (var filing of item?.account_filing.items) {
-
-
-      // console.log('filing : ' + JSON.stringify(filing) + '\n')
-
-      // CHECK IF THE FILING IS AN ACCOUNTS FILING AND IF IT IS FULL ACCOUNTS
-      // AND WE ONLY WANT THE LAST 2 ACCOUNT FILINGS SO WE USE THE account_no VARIABLE 
-      // account_no WILL BE 1 FOR THE FIRST ACCOUNT FILING AND 2 FOR THE SECOND
 
       if (count < 2) {
 
@@ -244,12 +250,12 @@ async function insertData(s3url, id, number, type) {
 
   try {
     const query = {
-      text: `UPDATE ecommerce SET ${a} = $1 WHERE id = $2`,
+      text: `UPDATE ecomm SET ${a} = $1 WHERE id = $2`,
       values: [s3url, id],
     }
 
     const query1 = {
-      text: `UPDATE ecommerce SET ${t} = $1 WHERE id = $2`,
+      text: `UPDATE ecomm SET ${t} = $1 WHERE id = $2`,
       values: [type, id],
     }
 
@@ -266,12 +272,12 @@ async function insertData(s3url, id, number, type) {
 
 async function uploadS3(dir, link) {
 
-  const bucketUrl = 'https://uk-company-accounts.s3.eu-north-1.amazonaws.com/'
+  const bucketUrl = 'https://company-data-ai.s3.eu-north-1.amazonaws.com/'
 
   const fileName = `${dir}${link}`;
   const fileBuffer = fs.readFileSync(fileName);
   const params = {
-    Bucket: 'uk-company-accounts',
+    Bucket: 'company-data-ai',
     Key: link,
     Body: fileBuffer,
     ContentType: 'application/pdf'
